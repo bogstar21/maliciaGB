@@ -292,7 +292,7 @@
         <button class="ssbtn" id="btn-select">SELECT</button>
         <button class="ssbtn" id="btn-start">START</button>
       </div>
-      <p id="hint">START = begin &middot; A = jump (double-tap = double jump) &middot; R = restart</p>
+      <p id="hint">START = begin &middot; A = jump (double-tap = double jump) &middot; B = shoot &middot; R = restart</p>
     </div>
   </div>
 
@@ -418,12 +418,13 @@
   const enemies = []; // goombas, koopas, flyers
   const particles = [];
   const items = []; // mushrooms, stars
+  const bullets = [];
   let flag = null;
   let startX = 16, startY = 80;
 
   function buildLevel() {
     solids.length = 0; coins.length = 0; enemies.length = 0;
-    particles.length = 0; items.length = 0;
+    particles.length = 0; items.length = 0; bullets.length = 0;
     for (let y = 0; y < LH; y++) {
       for (let x = 0; x < LW; x++) {
         const ch = levelStr[y][x];
@@ -464,6 +465,7 @@
   // Input
   const keys = {};
   let jumpQueued = false;
+  let shootQueued = false;
   addEventListener('keydown', (e) => {
     initAudio();
     if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
@@ -471,7 +473,8 @@
       if (gameState === 'title') {
         if (e.code === 'Enter' || e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyZ') startGame();
       } else {
-        if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyZ') jumpQueued = true;
+        if (e.code === 'Space' || e.code === 'ArrowUp') jumpQueued = true;
+        if (e.code === 'KeyZ') shootQueued = true;
         if (e.code === 'KeyR') restart();
       }
     }
@@ -639,7 +642,13 @@
       player.jumpsLeft--;
     }
     jumpQueued = false;
-    if (!(keys['Space']||keys['ArrowUp']||keys['KeyZ']) && player.vy < -1.5) player.vy = -1.5;
+    if (!(keys['Space']||keys['ArrowUp']) && player.vy < -1.5) player.vy = -1.5;
+
+    if (shootQueued) {
+      playSound('kick');
+      bullets.push({ x: player.x + (player.facing > 0 ? player.w : -4), y: player.y + 6, w: 4, h: 2, vx: player.facing * 4 });
+      shootQueued = false;
+    }
 
     player.vy += GRAVITY;
     if (player.vy > MAX_FALL) player.vy = MAX_FALL;
@@ -673,6 +682,28 @@
         if (it.type === 'mushroom') { player.score += 1000; player.invincibleTimer = 30; }
         if (it.type === 'star') player.starTimer = 480;
         items.splice(i, 1);
+      }
+    }
+
+    // Bullets
+    for (let i=bullets.length-1; i>=0; i--) {
+      let b = bullets[i];
+      b.x += b.vx;
+      let hit = false;
+      for (const s of solids) {
+        if (rectsOverlap(b, s)) { hit = true; break; }
+      }
+      if (!hit) {
+        for (let j=enemies.length-1; j>=0; j--) {
+          let e = enemies[j];
+          if (e.alive && rectsOverlap(b, e)) {
+            e.alive = false; e.timer = 0; player.score += 200; spawnParticles(e.x+4, e.y+4, PAL.L3, 6); playSound('stomp');
+            hit = true; break;
+          }
+        }
+      }
+      if (hit || b.x < camera.x || b.x > camera.x + W) {
+        bullets.splice(i, 1);
       }
     }
 
@@ -763,12 +794,12 @@
       rect(x+4, y+4, 1, 1, PAL.L0); rect(x+4, y+6, 1, 1, PAL.L0);
     }
   }
-  function drawCoin(x, y, t) {
+  function drawBearCan(x, y, t) {
     const bob = Math.sin(t) * 1;
-    rect(x+3, y+1+bob, 2, 1, PAL.L3); rect(x+2, y+2+bob, 4, 1, PAL.L2);
-    rect(x+2, y+3+bob, 1, 2, PAL.L3); rect(x+5, y+3+bob, 1, 2, PAL.L3);
-    rect(x+3, y+3+bob, 2, 2, PAL.L2); rect(x+2, y+5+bob, 4, 1, PAL.L2);
-    rect(x+3, y+6+bob, 2, 1, PAL.L3);
+    rect(x+2, y+2+bob, 4, 1, PAL.L3);
+    rect(x+2, y+3+bob, 4, 4, PAL.L1);
+    rect(x+2, y+7+bob, 4, 1, PAL.L3);
+    rect(x+3, y+4+bob, 2, 2, PAL.L3);
   }
   function drawFlag(x, y) {
     rect(x+3, y, 1, TILE*2, PAL.L3);
@@ -911,7 +942,11 @@
       }
     }
 
-    for (const c of coins) if (!c.taken && c.x + 8 >= camera.x && c.x <= camera.x + W) drawCoin(c.x, c.y, c.bob);
+    for (const b of bullets) {
+      rect(b.x, b.y, b.w, b.h, PAL.L3);
+    }
+
+    for (const c of coins) if (!c.taken && c.x + 8 >= camera.x && c.x <= camera.x + W) drawBearCan(c.x, c.y, c.bob);
     
     for (const it of items) {
       if(it.type === 'mushroom') {
@@ -990,7 +1025,7 @@
   bindButton(document.getElementById('dup'),    'ArrowUp',  () => { jumpQueued = true; });
   bindButton(document.getElementById('ddown'),  'ArrowDown');
   bindButton(document.getElementById('btn-a'),  'Space',    () => { if (gameState === 'title') startGame(); else jumpQueued = true; });
-  bindButton(document.getElementById('btn-b'),  'KeyZ');
+  bindButton(document.getElementById('btn-b'),  'KeyZ',     () => { if (gameState === 'title') startGame(); else shootQueued = true; });
   const btnStart  = document.getElementById('btn-start');
   const btnSelect = document.getElementById('btn-select');
   if (btnStart)  btnStart.addEventListener('click', () => { initAudio(); if (gameState === 'title') startGame(); else restart(); });
